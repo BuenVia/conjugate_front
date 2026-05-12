@@ -40,12 +40,14 @@ function App() {
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
 
+  const [verbs, setVerbs] = useState([]);
+  const [selectedVerbIds, setSelectedVerbIds] = useState(new Set());
   const [moods, setMoods] = useState([]);
   const [tenses, setTenses] = useState([]);
   const [selectedTenseIds, setSelectedTenseIds] = useState(new Set());
-  const [verbIds, setVerbIds] = useState('');
   const [updating, setUpdating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [verbModalOpen, setVerbModalOpen] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -59,11 +61,14 @@ function App() {
         const tensesData = await tensesRes.json();
         const moodsData = await moodsRes.json();
 
-        const ids = verbsData.data.map(v => v.id).join(',');
+        const allVerbs = verbsData.data;
+        const ids = allVerbs.map(v => v.id).join(',');
         const allTenses = tensesData.data;
         const allTenseIds = new Set(allTenses.map(t => t.id));
+        const allVerbIds = new Set(allVerbs.map(v => v.id));
 
-        setVerbIds(ids);
+        setVerbs(allVerbs);
+        setSelectedVerbIds(allVerbIds);
         setTenses(allTenses);
         setMoods(moodsData.data);
         setSelectedTenseIds(allTenseIds);
@@ -86,6 +91,15 @@ function App() {
     if (!loading && !updating && inputRef.current) inputRef.current.focus();
   }, [loading, updating, currentIndex]);
 
+  function toggleVerb(id) {
+    setSelectedVerbIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   function toggleTense(id) {
     setSelectedTenseIds(prev => {
       const next = new Set(prev);
@@ -97,10 +111,11 @@ function App() {
 
   async function handleUpdate() {
     setSidebarOpen(false);
+    setVerbModalOpen(false);
     setUpdating(true);
     try {
       const conjRes = await fetch(
-        `${API_BASE}/conjugations?verb=${verbIds}&tenses=${[...selectedTenseIds].join(',')}`
+        `${API_BASE}/conjugations?verb=${[...selectedVerbIds].join(',')}&tenses=${[...selectedTenseIds].join(',')}`
       );
       const conjData = await conjRes.json();
       setQuestions(flattenConjugations(conjData.data));
@@ -114,7 +129,6 @@ function App() {
     }
   }
 
-  // Group tenses by mood_id; tenses without a mood_id go under 'other'
   const tensesByMoodId = tenses.reduce((acc, tense) => {
     const key = tense.mood_id ?? 'other';
     (acc[key] ??= []).push(tense);
@@ -147,12 +161,85 @@ function App() {
     if (status === 'incorrect') setStatus('idle');
   }
 
+  const verbMenuButton = (
+    <button
+      className="btn btn-sm verb-menu-btn"
+      onClick={() => setVerbModalOpen(true)}
+      disabled={updating}
+    >
+      Verbs
+      {selectedVerbIds.size < verbs.length && (
+        <span className="verb-count-badge ms-1">{selectedVerbIds.size}/{verbs.length}</span>
+      )}
+    </button>
+  );
+
+  const verbModal = verbModalOpen && (
+    <>
+      <div className="modal-backdrop fade show" onClick={() => setVerbModalOpen(false)} />
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-scrollable modal-dialog-centered">
+          <div className="modal-content verb-modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Verbs</h5>
+              <button type="button" className="btn-close" onClick={() => setVerbModalOpen(false)} />
+            </div>
+            <div className="modal-body">
+              {verbs.map(verb => (
+                <div key={verb.id} className="form-check mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id={`verb-${verb.id}`}
+                    checked={selectedVerbIds.has(verb.id)}
+                    onChange={() => toggleVerb(verb.id)}
+                  />
+                  <label className="form-check-label" htmlFor={`verb-${verb.id}`}>
+                    {verb.infinitive}
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary btn-sm" onClick={() => setVerbModalOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleUpdate}
+                disabled={updating || selectedVerbIds.size === 0}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  const appHeader = (
+    <header className="navbar app-header px-3 py-2">
+      <div className="header-left d-flex align-items-center">
+        <button
+          className="btn btn-outline-secondary btn-sm d-md-none me-2"
+          onClick={() => setSidebarOpen(true)}
+        >
+          &#9776;
+        </button>
+        <span className="navbar-brand fw-bold mb-0 conjugate-title">CONJUGATE</span>
+      </div>
+      <div className="flex-grow-1 d-flex justify-content-center">
+        {!loading && !error && verbMenuButton}
+      </div>
+      <div className="header-right" />
+    </header>
+  );
+
   if (loading) {
     return (
       <div className="d-flex flex-column min-vh-100">
-        <header className="navbar app-header px-3 py-2">
-          <span className="navbar-brand fw-bold mb-0 conjugate-title">CONJUGATE</span>
-        </header>
+        {appHeader}
         <div className="d-flex flex-grow-1 align-items-center justify-content-center">
           <p className="text-body-secondary">Loading...</p>
         </div>
@@ -163,9 +250,7 @@ function App() {
   if (error) {
     return (
       <div className="d-flex flex-column min-vh-100">
-        <header className="navbar app-header px-3 py-2">
-          <span className="navbar-brand fw-bold mb-0 conjugate-title">CONJUGATE</span>
-        </header>
+        {appHeader}
         <div className="d-flex flex-grow-1 align-items-center justify-content-center">
           <p className="text-danger">{error}</p>
         </div>
@@ -285,15 +370,8 @@ function App() {
 
   return (
     <div className="d-flex flex-column min-vh-100">
-      <header className="navbar app-header px-3 py-2">
-        <button
-          className="btn btn-outline-secondary btn-sm d-md-none me-2"
-          onClick={() => setSidebarOpen(true)}
-        >
-          &#9776;
-        </button>
-        <span className="navbar-brand fw-bold mb-0 conjugate-title">CONJUGATE</span>
-      </header>
+      {verbModal}
+      {appHeader}
 
       <div className="app-layout flex-grow-1">
         {sidebarOpen && (

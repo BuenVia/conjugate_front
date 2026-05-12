@@ -45,7 +45,48 @@
   color: var(--conjugate-accent);
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 1.1rem;
+  font-size: 1.75rem;
+}
+
+.header-left {
+  min-width: 160px;
+}
+
+.header-right {
+  min-width: 160px;
+}
+
+.verb-dropdown-wrap {
+  position: relative;
+}
+
+.verb-menu-btn {
+  color: var(--bs-body-color);
+  background: transparent;
+  border: 1px solid rgba(var(--conjugate-accent-rgb), 0.4);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.verb-menu-btn:hover:not(:disabled) {
+  border-color: var(--conjugate-accent);
+  background: rgba(var(--conjugate-accent-rgb), 0.08);
+  color: var(--bs-body-color);
+}
+
+.verb-count-badge {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.verb-modal-content {
+  background: var(--bs-tertiary-bg);
+  border: 1px solid var(--conjugate-accent);
+  border-radius: 0.75rem;
 }
 
 .app-header {
