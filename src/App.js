@@ -100,6 +100,12 @@ function App() {
     });
   }
 
+  function toggleAllVerbs() {
+    setSelectedVerbIds(prev =>
+      prev.size > 0 ? new Set() : new Set(verbs.map(v => v.id))
+    );
+  }
+
   function toggleTense(id) {
     setSelectedTenseIds(prev => {
       const next = new Set(prev);
@@ -185,6 +191,9 @@ function App() {
               <button type="button" className="btn-close" onClick={() => setVerbModalOpen(false)} />
             </div>
             <div className="modal-body">
+              <button className="btn btn-outline-secondary btn-sm w-100 mb-3" onClick={toggleAllVerbs}>
+                {selectedVerbIds.size > 0 ? 'Deselect All' : 'Select All'}
+              </button>
               {verbs.map(verb => (
                 <div key={verb.id} className="form-check mb-2">
                   <input
@@ -199,6 +208,9 @@ function App() {
                   </label>
                 </div>
               ))}
+              <button className="btn btn-outline-secondary btn-sm w-100 mt-2" onClick={toggleAllVerbs}>
+                {selectedVerbIds.size > 0 ? 'Deselect All' : 'Select All'}
+              </button>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary btn-sm" onClick={() => setVerbModalOpen(false)}>
