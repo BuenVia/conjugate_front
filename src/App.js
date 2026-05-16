@@ -2,82 +2,51 @@ import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
-}
-
-function flattenConjugations(data) {
-  const questions = [];
-  for (const verbData of data) {
-    for (const mood of verbData.moods) {
-      for (const tense of mood.tenses) {
-        for (const conj of tense.conjugations) {
-          questions.push({
-            infinitive: verbData.verb.infinitive,
-            person: conj.person,
-            mood: mood.name,
-            tense: tense.name,
-            answer: conj.value,
-          });
-        }
-      }
-    }
-  }
-  return shuffle(questions);
-}
+const DEFAULT_TENSE_NAMES = ['Presente', 'Pretérito Indefinido', 'Pretérito Imperfecto', 'Futuro Simple'];
 
 function App() {
+  const [verbs, setVerbs] = useState([]);
+  const [tenses, setTenses] = useState([]);
+  const [allPronounIds, setAllPronounIds] = useState([]);
+  const [selectedVerbIds, setSelectedVerbIds] = useState(new Set());
+  const [selectedTenseIds, setSelectedTenseIds] = useState(new Set());
+
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userInput, setUserInput] = useState('');
   const [status, setStatus] = useState('idle'); // 'idle' | 'correct' | 'incorrect'
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const inputRef = useRef(null);
+  const [phase, setPhase] = useState('setup'); // 'setup' | 'quiz'
+  const [submitting, setSubmitting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [verbs, setVerbs] = useState([]);
-  const [selectedVerbIds, setSelectedVerbIds] = useState(new Set());
-  const [moods, setMoods] = useState([]);
-  const [tenses, setTenses] = useState([]);
-  const [selectedTenseIds, setSelectedTenseIds] = useState(new Set());
-  const [updating, setUpdating] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [verbModalOpen, setVerbModalOpen] = useState(false);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     async function init() {
       try {
-        const [verbsRes, tensesRes, moodsRes] = await Promise.all([
+        const [verbsRes, tensesRes, pronounsRes] = await Promise.all([
           fetch(`${API_BASE}/verbs`),
           fetch(`${API_BASE}/tenses`),
-          fetch(`${API_BASE}/moods`),
+          fetch(`${API_BASE}/pronouns`),
         ]);
         const verbsData = await verbsRes.json();
         const tensesData = await tensesRes.json();
-        const moodsData = await moodsRes.json();
+        const pronounsData = await pronounsRes.json();
 
         const allVerbs = verbsData.data;
-        const ids = allVerbs.map(v => v.id).join(',');
         const allTenses = tensesData.data;
-        const allTenseIds = new Set(allTenses.map(t => t.id));
-        const allVerbIds = new Set(allVerbs.map(v => v.id));
+        const allPronouns = pronounsData.data;
 
         setVerbs(allVerbs);
-        setSelectedVerbIds(allVerbIds);
         setTenses(allTenses);
-        setMoods(moodsData.data);
-        setSelectedTenseIds(allTenseIds);
-
-        const conjRes = await fetch(
-          `${API_BASE}/conjugations?verb=${ids}&tense=${[...allTenseIds].join(',')}`
-        );
-        const conjData = await conjRes.json();
-        setQuestions(flattenConjugations(conjData.data));
+        setAllPronounIds(allPronouns.map(p => p.id));
+        setSelectedVerbIds(new Set(allVerbs.map(v => v.id)));
+        setSelectedTenseIds(new Set(
+          allTenses.filter(t => DEFAULT_TENSE_NAMES.includes(t.name)).map(t => t.id)
+        ));
       } catch {
         setError('Failed to load data. Is the API running?');
       } finally {
@@ -88,60 +57,55 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!loading && !updating && inputRef.current) inputRef.current.focus();
-  }, [loading, updating, currentIndex]);
+    if (phase === 'quiz' && !submitting && inputRef.current) inputRef.current.focus();
+  }, [phase, submitting, currentIndex]);
 
   function toggleVerb(id) {
     setSelectedVerbIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
 
   function toggleAllVerbs() {
-    setSelectedVerbIds(prev =>
-      prev.size > 0 ? new Set() : new Set(verbs.map(v => v.id))
-    );
+    setSelectedVerbIds(prev => prev.size > 0 ? new Set() : new Set(verbs.map(v => v.id)));
   }
 
   function toggleTense(id) {
     setSelectedTenseIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
 
-  async function handleUpdate() {
-    setSidebarOpen(false);
-    setVerbModalOpen(false);
-    setUpdating(true);
+  function toggleAllTenses() {
+    setSelectedTenseIds(prev => prev.size > 0 ? new Set() : new Set(tenses.map(t => t.id)));
+  }
+
+  async function handleSubmit() {
+    setSubmitting(true);
     try {
-      const conjRes = await fetch(
-        `${API_BASE}/conjugations?verb=${[...selectedVerbIds].join(',')}&tenses=${[...selectedTenseIds].join(',')}`
-      );
-      const conjData = await conjRes.json();
-      setQuestions(flattenConjugations(conjData.data));
+      const params = new URLSearchParams({
+        verbs: [...selectedVerbIds].join(','),
+        tenses: [...selectedTenseIds].join(','),
+        pronouns: allPronounIds.join(','),
+      });
+      const res = await fetch(`${API_BASE}/practice?${params}`);
+      const data = await res.json();
+      setQuestions(data.data);
       setCurrentIndex(0);
       setUserInput('');
       setStatus('idle');
+      setPhase('quiz');
+      setSettingsOpen(false);
     } catch {
-      setError('Failed to reload conjugations.');
+      setError('Failed to load practice questions.');
     } finally {
-      setUpdating(false);
+      setSubmitting(false);
     }
   }
-
-  const tensesByMoodId = tenses.reduce((acc, tense) => {
-    const key = tense.mood_id ?? 'other';
-    (acc[key] ??= []).push(tense);
-    return acc;
-  }, {});
-
-  const currentQuestion = questions[currentIndex];
 
   function handleNext() {
     if (status === 'correct') {
@@ -151,7 +115,8 @@ function App() {
       return;
     }
     if (!userInput.trim()) return;
-    if (userInput === currentQuestion.answer) {
+    const currentQuestion = questions[currentIndex];
+    if (userInput === currentQuestion.conjugation) {
       setStatus('correct');
     } else {
       setStatus('incorrect');
@@ -167,84 +132,80 @@ function App() {
     if (status === 'incorrect') setStatus('idle');
   }
 
-  const verbMenuButton = (
-    <button
-      className="btn btn-sm verb-menu-btn"
-      onClick={() => setVerbModalOpen(true)}
-      disabled={updating}
-    >
-      Verbs
-      {selectedVerbIds.size < verbs.length && (
-        <span className="verb-count-badge ms-1">{selectedVerbIds.size}/{verbs.length}</span>
-      )}
-    </button>
-  );
+  const tensesByMood = tenses.reduce((acc, tense) => {
+    const mood = tense.mood || 'Other';
+    if (!acc[mood]) acc[mood] = [];
+    acc[mood].push(tense);
+    return acc;
+  }, {});
 
-  const verbModal = verbModalOpen && (
-    <>
-      <div className="modal-backdrop fade show" onClick={() => setVerbModalOpen(false)} />
-      <div className="modal fade show d-block" tabIndex="-1">
-        <div className="modal-dialog modal-dialog-scrollable modal-dialog-centered">
-          <div className="modal-content verb-modal-content">
-            <div className="modal-header">
-              <h5 className="modal-title">Verbs</h5>
-              <button type="button" className="btn-close" onClick={() => setVerbModalOpen(false)} />
+  const selectionContent = (
+    <div className="row g-4">
+      <div className="col-6">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h6 className="mb-0 fw-semibold">Verbs</h6>
+          <button className="btn btn-sm verb-menu-btn" onClick={toggleAllVerbs}>
+            {selectedVerbIds.size > 0 ? 'Deselect All' : 'Select All'}
+          </button>
+        </div>
+        <div className="selection-list">
+          {verbs.map(verb => (
+            <div key={verb.id} className="form-check mb-2">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                id={`verb-${verb.id}`}
+                checked={selectedVerbIds.has(verb.id)}
+                onChange={() => toggleVerb(verb.id)}
+              />
+              <label className="form-check-label" htmlFor={`verb-${verb.id}`}>
+                {verb.infinitive}
+              </label>
             </div>
-            <div className="modal-body">
-              <button className="btn btn-outline-secondary btn-sm w-100 mb-3" onClick={toggleAllVerbs}>
-                {selectedVerbIds.size > 0 ? 'Deselect All' : 'Select All'}
-              </button>
-              {verbs.map(verb => (
-                <div key={verb.id} className="form-check mb-2">
+          ))}
+        </div>
+      </div>
+      <div className="col-6">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h6 className="mb-0 fw-semibold">Tenses</h6>
+          <button className="btn btn-sm verb-menu-btn" onClick={toggleAllTenses}>
+            {selectedTenseIds.size > 0 ? 'Deselect All' : 'Select All'}
+          </button>
+        </div>
+        <div className="selection-list">
+          {Object.entries(tensesByMood).map(([mood, moodTenses]) => (
+            <div key={mood} className="mb-3">
+              <p className="small fw-semibold mb-2 mood-heading">{mood}</p>
+              {moodTenses.map(tense => (
+                <div key={tense.id} className="form-check mb-2">
                   <input
                     className="form-check-input"
                     type="checkbox"
-                    id={`verb-${verb.id}`}
-                    checked={selectedVerbIds.has(verb.id)}
-                    onChange={() => toggleVerb(verb.id)}
+                    id={`tense-${tense.id}`}
+                    checked={selectedTenseIds.has(tense.id)}
+                    onChange={() => toggleTense(tense.id)}
                   />
-                  <label className="form-check-label" htmlFor={`verb-${verb.id}`}>
-                    {verb.infinitive}
+                  <label className="form-check-label" htmlFor={`tense-${tense.id}`}>
+                    {tense.name}
                   </label>
                 </div>
               ))}
-              <button className="btn btn-outline-secondary btn-sm w-100 mt-2" onClick={toggleAllVerbs}>
-                {selectedVerbIds.size > 0 ? 'Deselect All' : 'Select All'}
-              </button>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary btn-sm" onClick={() => setVerbModalOpen(false)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleUpdate}
-                disabled={updating || selectedVerbIds.size === 0}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
-    </>
+    </div>
   );
 
   const appHeader = (
     <header className="navbar app-header px-3 py-2">
-      <div className="header-left d-flex align-items-center">
-        <button
-          className="btn btn-outline-secondary btn-sm d-md-none me-2"
-          onClick={() => setSidebarOpen(true)}
-        >
-          &#9776;
+      <span className="navbar-brand fw-bold mb-0 conjugate-title">CONJUGATE</span>
+      <div className="flex-grow-1" />
+      {phase === 'quiz' && (
+        <button className="btn btn-sm verb-menu-btn" onClick={() => setSettingsOpen(true)}>
+          Settings
         </button>
-        <span className="navbar-brand fw-bold mb-0 conjugate-title">CONJUGATE</span>
-      </div>
-      <div className="flex-grow-1 d-flex justify-content-center">
-        {!loading && !error && verbMenuButton}
-      </div>
-      <div className="header-right" />
+      )}
     </header>
   );
 
@@ -270,82 +231,74 @@ function App() {
     );
   }
 
-  const sidebar = (
-    <nav className={`sidebar${sidebarOpen ? ' sidebar-open' : ''}`}>
-      <div className="d-flex justify-content-between align-items-center mb-3 d-md-none">
-        <span className="fw-semibold">Tenses</span>
-        <button
-          className="btn-close"
-          aria-label="Close"
-          onClick={() => setSidebarOpen(false)}
-        />
-      </div>
-      <p className="sidebar-section-label d-none d-md-block">Tenses</p>
-
-      {moods.map(mood => {
-        const moodTenses = tensesByMoodId[mood.id] || [];
-        if (moodTenses.length === 0) return null;
-        return (
-          <div key={mood.id} className="mb-3">
-            <p className="sidebar-mood-label">{mood.name}</p>
-            {moodTenses.map(tense => (
-              <div key={tense.id} className="form-check ms-1">
-                <input
-                  className="form-check-input"
-                  type="checkbox"
-                  id={`tense-${tense.id}`}
-                  checked={selectedTenseIds.has(tense.id)}
-                  onChange={() => toggleTense(tense.id)}
-                  disabled={updating}
-                />
-                <label className="form-check-label" htmlFor={`tense-${tense.id}`}>
-                  {tense.name}
-                </label>
+  if (phase === 'setup') {
+    return (
+      <div className="d-flex flex-column min-vh-100">
+        {appHeader}
+        <div className="app-layout flex-grow-1">
+          <div className="main-content">
+            <div className="card setup-card">
+              <div className="card-body p-4">
+                <h5 className="fw-semibold mb-4">Choose what to practice</h5>
+                {selectionContent}
+                <div className="mt-4 d-flex justify-content-end">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleSubmit}
+                    disabled={submitting || selectedVerbIds.size === 0 || selectedTenseIds.size === 0}
+                  >
+                    {submitting ? 'Loading...' : 'Start'}
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
-        );
-      })}
-
-      {(tensesByMoodId['other'] || []).length > 0 && (
-        <div className="mb-3">
-          <p className="sidebar-mood-label">Other</p>
-          {tensesByMoodId['other'].map(tense => (
-            <div key={tense.id} className="form-check ms-1">
-              <input
-                className="form-check-input"
-                type="checkbox"
-                id={`tense-${tense.id}`}
-                checked={selectedTenseIds.has(tense.id)}
-                onChange={() => toggleTense(tense.id)}
-                disabled={updating}
-              />
-              <label className="form-check-label" htmlFor={`tense-${tense.id}`}>
-                {tense.name}
-              </label>
             </div>
-          ))}
+          </div>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      <button
-        className="btn btn-secondary btn-sm w-100 mt-2"
-        onClick={handleUpdate}
-        disabled={updating || selectedTenseIds.size === 0}
-      >
-        {updating ? 'Updating...' : 'Update'}
-      </button>
-    </nav>
+  const currentQuestion = questions[currentIndex];
+
+  const settingsModal = settingsOpen && (
+    <>
+      <div className="modal-backdrop fade show" onClick={() => setSettingsOpen(false)} />
+      <div className="modal fade show d-block" tabIndex="-1">
+        <div className="modal-dialog modal-dialog-scrollable modal-dialog-centered modal-lg">
+          <div className="modal-content verb-modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Settings</h5>
+              <button type="button" className="btn-close" onClick={() => setSettingsOpen(false)} />
+            </div>
+            <div className="modal-body">
+              {selectionContent}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary btn-sm" onClick={() => setSettingsOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleSubmit}
+                disabled={submitting || selectedVerbIds.size === 0 || selectedTenseIds.size === 0}
+              >
+                {submitting ? 'Loading...' : 'Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 
   const quizBody = currentIndex >= questions.length ? (
-    <p>{questions.length === 0 ? 'No conjugations found.' : 'All done!'}</p>
+    <p>{questions.length === 0 ? 'No questions found.' : 'All done!'}</p>
   ) : (
     <>
       <div className="text-center">
-        <p className="fs-2 fw-bold mb-0">{currentQuestion?.infinitive}</p>
+        <p className="fs-2 fw-bold mb-0">{currentQuestion?.infinitive ?? currentQuestion?.infinite}</p>
         <p className="text-muted mt-2 mb-0">
-          {currentQuestion?.mood} &middot; {currentQuestion?.tense} &middot; {currentQuestion?.person}
+          {currentQuestion?.mood} &middot; {currentQuestion?.tense} &middot; {currentQuestion?.pronoun}
         </p>
       </div>
 
@@ -357,24 +310,20 @@ function App() {
           value={userInput}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          disabled={status === 'correct' || updating}
+          disabled={status === 'correct' || submitting}
           placeholder="Enter conjugation"
         />
         <button
           className="btn btn-primary"
           onClick={handleNext}
-          disabled={(status !== 'correct' && !userInput.trim()) || updating}
+          disabled={(status !== 'correct' && !userInput.trim()) || submitting}
         >
           Next
         </button>
       </div>
 
-      {status === 'correct' && (
-        <p className="fw-bold text-success mb-0">Correct!</p>
-      )}
-      {status === 'incorrect' && (
-        <p className="fw-bold text-danger mb-0">Incorrect, try again.</p>
-      )}
+      {status === 'correct' && <p className="fw-bold text-success mb-0">Correct!</p>}
+      {status === 'incorrect' && <p className="fw-bold text-danger mb-0">Incorrect, try again.</p>}
 
       <p className="small text-muted mb-0">{currentIndex + 1} / {questions.length}</p>
     </>
@@ -382,14 +331,9 @@ function App() {
 
   return (
     <div className="d-flex flex-column min-vh-100">
-      {verbModal}
+      {settingsModal}
       {appHeader}
-
       <div className="app-layout flex-grow-1">
-        {sidebarOpen && (
-          <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
-        )}
-        {sidebar}
         <div className="main-content">
           <div className="card quiz-card" style={{ maxWidth: '480px', width: '100%' }}>
             <div className="card-body d-flex flex-column align-items-center gap-4 p-4">

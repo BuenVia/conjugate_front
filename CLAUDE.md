@@ -28,3 +28,9 @@ This is a single-page React app (Create React App) that quizzes users on verb co
 Bootstrap v5 is loaded via CDN in `public/index.html`. All layout, typography, color, and component styling uses Bootstrap utility classes (`d-flex`, `gap-*`, `fw-bold`, `text-danger`, `fs-*`, `btn btn-primary`, `form-control`, etc.) directly on JSX elements.
 
 `App.css` is intentionally minimal — it only defines the `.app` wrapper for max-width and centering, which Bootstrap's container doesn't constrain to 600px by default.
+
+
+
+## UX/UI Style Specifications
+
+For stlyings and CSS guidlines read @context/stylings.md
