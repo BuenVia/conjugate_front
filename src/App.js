@@ -3,6 +3,7 @@ import './App.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const DEFAULT_TENSE_NAMES = ['Presente', 'Pretérito Indefinido', 'Pretérito Imperfecto', 'Futuro Simple'];
+const DEFAULT_MOOD_NAME = 'Indicativo';
 
 function App() {
   const [verbs, setVerbs] = useState([]);
@@ -45,7 +46,9 @@ function App() {
         setAllPronounIds(allPronouns.map(p => p.id));
         setSelectedVerbIds(new Set(allVerbs.map(v => v.id)));
         setSelectedTenseIds(new Set(
-          allTenses.filter(t => DEFAULT_TENSE_NAMES.includes(t.name)).map(t => t.id)
+          allTenses
+            .filter(t => t.mood_name === DEFAULT_MOOD_NAME && DEFAULT_TENSE_NAMES.includes(t.name))
+            .map(t => t.id)
         ));
       } catch {
         setError('Failed to load data. Is the API running?');
@@ -133,9 +136,9 @@ function App() {
   }
 
   const tensesByMood = tenses.reduce((acc, tense) => {
-    const mood = tense.mood || 'Other';
-    if (!acc[mood]) acc[mood] = [];
-    acc[mood].push(tense);
+    const key = tense.mood_id ?? 'other';
+    if (!acc[key]) acc[key] = { moodName: tense.mood_name || 'Other', tenses: [] };
+    acc[key].tenses.push(tense);
     return acc;
   }, {});
 
@@ -173,9 +176,9 @@ function App() {
           </button>
         </div>
         <div className="selection-list">
-          {Object.entries(tensesByMood).map(([mood, moodTenses]) => (
-            <div key={mood} className="mb-3">
-              <p className="small fw-semibold mb-2 mood-heading">{mood}</p>
+          {Object.entries(tensesByMood).map(([moodId, { moodName, tenses: moodTenses }]) => (
+            <div key={moodId} className="mb-3">
+              <p className="small fw-semibold mb-2 mood-heading">{moodName}</p>
               {moodTenses.map(tense => (
                 <div key={tense.id} className="form-check mb-2">
                   <input
